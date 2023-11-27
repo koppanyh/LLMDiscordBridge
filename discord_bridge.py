@@ -1,4 +1,4 @@
-# Version 1 of the OpenAI-Discord bridge.
+# Version 2 of the OpenAI-Discord bridge.
 # Written by @koppanyh
 #
 # Setup:
@@ -16,48 +16,52 @@ import requests
 
 
 class Settings:
-	@staticmethod
-	def checkSettings(fileName="discord_settings.json"):
-		return os.path.exists(fileName)
 	def __init__(self, fileName="discord_settings.json"):
-		self.fileName = fileName
+		# Saved settings
 		self.token = ""
 		self.mode = ""
 		self.character = ""
+		self.url = "http://127.0.0.1:5000"
+		self.channels = set()
+		# Runtime settings
+		self.fileName = fileName
 		self.name = ""
 		self.clientId = 0
-		self.channels = set()
 	def load(self):
 		with open(self.fileName, "r") as f:
-			data = json.loads(f.read())
+			data = {
+				"token": self.token,
+				"mode": self.mode,
+				"character": self.character,
+				"url": self.url,
+				"channels": list(self.channels)
+			}
+			data.update(json.loads(f.read()))
 			self.token = data["token"]
 			self.mode = data["mode"]
 			self.character = data["character"]
-			self.name = data["name"]
-			self.clientId = data["clientId"]
+			self.url = data["url"]
 			self.channels = set(data["channels"])
 	def save(self):
 		data = {
 			"token": self.token,
 			"mode": self.mode,
 			"character": self.character,
-			"name": self.name,
-			"clientId": self.clientId,
+			"url": self.url,
 			"channels": list(self.channels)
 		}
 		with open(self.fileName, "w") as f:
 			f.write(json.dumps(data, indent=2))
-
-settings = Settings()
-
-# Load settings or fill them in if they don't exist
-if Settings.checkSettings():
-	settings.load()
-else:
-	settings.token = input("Bot's Discord token: ")
-	settings.mode = input("LLM mode (chat/chat-instruct/instruct): ")
-	settings.character = input("LLM character name: ")
-	settings.save()
+	def loadSafe(self):
+		# Load settings or fill them in if they don't exist
+		if os.path.exists(self.fileName):
+			self.load()
+		else:
+			self.token = input("Bot's Discord token: ")
+			self.mode = input("LLM mode (chat/chat-instruct/instruct): ")
+			self.character = input("LLM character name: ")
+			self.url = input("OpenAI API endpoint (http://127.0.0.1:5000): ")
+			self.save()
 
 
 
@@ -79,7 +83,7 @@ class Chat:
 		self.character = character
 		self.history = []
 	def reply(self, msg):
-		self.history.append({"role": "user", "content": msg})
+		self.addHistory("user", msg)
 		data = {
 			"mode": self.mode,
 			"character": self.character,
@@ -88,95 +92,124 @@ class Chat:
 		response = api.chat(data)["message"]
 		self.history.append(response)
 		return response["content"]
-
-api = API()
-#chat = Chat(api, settings.mode, settings.character)
-#print("Hello!")
-#print(chat.reply("Hello!"))
-#print("Oh, is that so?")
-#print(chat.reply("Oh, is that so?"))
-
-chats = {} # channelId: Chat
+	def addHistory(self, role, content):
+		self.history.append({"role": role, "content": content})
 
 
 
-intents = discord.Intents.default()
-intents.message_content = True
-intents.typing = False
-intents.presences = False
-
-client = discord.Client(intents=intents)
-
-@client.event
-async def on_ready():
-	# Update bot settings automatically
-	updates = False
-	if client.user.id != settings.clientId:
-		settings.clientId = client.user.id
-		updates = True
-	if client.user.name != settings.name:
-		settings.name = client.user.name
-		updates = True
-	if updates:
-		settings.save()
-	
-	print(f'Logged in as {client.user}')
-	print('Please be aware that character greetings are not included in the generated prompts')
-
+# This is a little helper function used for running the chat as an async func
 def chatReply(chat, msg):
 	return chat.reply(msg)
 
-@client.event
-async def on_message(message):
-	# Ignore your own messages
-	if message.author == client.user:
-		return
-	
-	msg = message.clean_content
+# Helper function to get the chat if we're allowed to use this channel
+def getChat(chanId, chats, api, settings):
+	if chanId not in settings.channels:
+		# No chat if we're not registered
+		return None
+	if chanId in chats:
+		return chats[chanId]
+	else:
+		chat = Chat(api, settings.mode, settings.character)
+		chats[chanId] = chat
+		return chat
+
+async def processCommands(message, chats, api, settings):
+	msg = message.content.strip()
+	cmd = msg.split()
+	if len(cmd) < 2 or not cmd[0].startswith("$"):
+		return False
+	if cmd[1] != f"<@{settings.clientId}>":
+		# It's a command, it's just not ours
+		return True
+	msg = msg.replace(cmd[0], "", 1).replace(cmd[1], "", 1).strip()
+	cmd = cmd[0]
 	chanId = message.channel.id
 	
-	# Process commands
-	if msg.startswith(f"$help @{settings.name}"):
-		await message.channel.send("$ping, $register, $remove, $speak")
-		return
-	elif msg.startswith(f"$ping @{settings.name}"):
+	if cmd == "$help":
+		await message.channel.send("$ping, $register, $remove, $reset, $speak, $whisper")
+	elif cmd == "$ping":
 		await message.channel.send("Pong!")
-		return
-	elif msg.startswith(f"$register @{settings.name}"):
+	elif cmd == "$register":
 		settings.channels.add(chanId)
 		settings.save()
 		await message.channel.send("Hello!")
-		return
-	elif msg.startswith(f"$remove @{settings.name}"):
+	elif cmd == "$remove":
 		if chanId in settings.channels:
 			settings.channels.remove(chanId)
 			settings.save()
 		await message.channel.send("Bye")
-		return
-	elif msg.startswith(f"$speak @{settings.name}"):
-		newMsg = msg.replace(f"$speak @{settings.name}", "").strip()
-		await message.channel.send(newMsg)
-		return
-	elif msg.startswith("$"):
-		# Ignore commands that weren't for us
-		return
-	
-	# Ignore messages from channels that we're not in
-	if chanId not in settings.channels:
-		return
-	
-	if chanId in chats:
-		chat = chats[chanId]
+	elif cmd == "$reset":
+		chat = getChat(chanId, chats, api, settings)
+		if chat is not None:
+			chat.history = []
+			await message.channel.send("Wut?")
+	elif cmd == "$speak":
+		chat = getChat(chanId, chats, api, settings)
+		if chat is not None:
+			chat.addHistory("assistant", msg)
+			await message.channel.send(msg)
+	elif cmd == "$whisper":
+		chat = getChat(chanId, chats, api, settings)
+		if chat is not None:
+			await message.channel.send(msg)
 	else:
-		chat = Chat(api, settings.mode, settings.character)
-		chats[chanId] = chat
+		# No valid commands detected
+		return False
 	
-	print(f"MSG: {msg}")
-	async with message.channel.typing():
-		loop = asyncio.get_event_loop()
-		response = await loop.run_in_executor(None, chatReply, chat, msg)
-	print(f"RESP: {response}")
-	print()
-	await message.channel.send(response)
+	return True
 
-client.run(settings.token)
+
+
+if __name__ == "__main__":
+	settings = Settings("discord_settings.json")
+	settings.loadSafe()
+	
+	api = API(settings.url)
+	
+	chats = {} # channelId: Chat
+	
+	intents = discord.Intents.default()
+	intents.message_content = True
+	intents.typing = False
+	intents.presences = False
+	
+	client = discord.Client(intents=intents)
+	
+	@client.event
+	async def on_ready():
+		# Update runtime settings
+		settings.clientId = client.user.id
+		settings.name = client.user.name
+		
+		print(f'Logged in as {client.user}')
+		print('Please be aware that character greetings are not included in the generated prompts')
+	
+	@client.event
+	async def on_message(message):
+		# Ignore bot's own messages
+		if message.author == client.user:
+			return
+		
+		# Process any commands
+		isCommand = await processCommands(message, chats, api, settings)
+		if isCommand:
+			return
+		
+		chat = getChat(message.channel.id, chats, api, settings)
+		
+		# Ignore messages from channels that we're not in
+		if chat is None:
+			return
+		
+		msg = message.clean_content
+		print(f"MSG: {msg}")
+		
+		async with message.channel.typing():
+			loop = asyncio.get_event_loop()
+			response = await loop.run_in_executor(None, chatReply, chat, msg)
+		
+		print(f"RESP: {response}")
+		print()
+		await message.channel.send(response)
+	
+	client.run(settings.token)

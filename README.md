@@ -15,7 +15,9 @@ Bots will ignore commands for other bots.
 - `$ping @Bot` Used to get the bot to reply "Pong!" to test that it can read and write on a channel
 - `$register @Bot` Used to make the bot listen and reply to messages on a channel
 - `$remove @Bot` Remove the bot from a channel so it doesn't reply to any messages
+- `$reset @Bot` Clear the bot's memory of that channel's conversation
 - `$speak @Bot` Used to make the bot say something to initiate conversations
+- `$whisper @Bot` Used to make the bot say something without remembering it
 
 ## Setup
 
@@ -32,6 +34,7 @@ First time:
   - Token: the token of the bot, used to authenticate with Discord
   - Mode: the chat mode, as found in the Text Generation UI's chat mode selector
   - Character: the character to use, as found in the Text Generation UI's character gallery
+  - URL: the URL to the Text Generation UI's OpenAI API, typically http://127.0.0.1:5000, no slash at the end
 - These settings will be saved to `discord_settings.json` if you need to change it later
 
 The Text Generation UI needs to be started with the `--listen --api` flags in order for this to work.
