@@ -1,4 +1,4 @@
-# Version 2 of the OpenAI-Discord bridge.
+# Version 3 of the OpenAI-Discord bridge.
 # Written by @koppanyh
 #
 # Setup:
@@ -161,7 +161,11 @@ async def processCommands(message, chats, api, settings):
 
 
 if __name__ == "__main__":
-	settings = Settings("discord_settings.json")
+	settingsFile = input("Settings file (leave empty for default): ")
+	if settingsFile == "":
+		settings = Settings("discord_settings.json")
+	else:
+		settings = Settings(settingsFile)
 	settings.loadSafe()
 	
 	api = API(settings.url)
