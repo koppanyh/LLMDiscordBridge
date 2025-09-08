@@ -1,0 +1,3 @@
+settings*.json
+!settings_example.json
+__pycache__

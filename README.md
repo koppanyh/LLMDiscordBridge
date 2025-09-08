@@ -1,6 +1,8 @@
 # LLMDiscordBridge
 
-A bridge for oobabooga/text-generation-webui and Discord, using the OpenAI API format.
+A simple app that exposes an OpenAI-like LLM API to be used to drive a Discord bot.
+
+This is primarily designed to interface with `llama-server` from the [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp) project.
 
 ## Usage
 
@@ -23,7 +25,7 @@ Bots will ignore commands for other bots.
 
 Discord bot:
 - [Set up a Discord bot](https://discordpy.readthedocs.io/en/stable/discord.html) if you don't have one already
-- Make sure the Message Content Intent checkbox is set to true
+- Make sure the `Message Content Intent` checkbox is set to true
 - Add it to the server of your choice, make sure it has message read and write permissions
 
 First time:
@@ -32,9 +34,12 @@ First time:
 - Run `python discord_bridge.py` to run the bridge
 - You will be asked to fill in some info
   - Token: the token of the bot, used to authenticate with Discord
-  - Mode: the chat mode, as found in the Text Generation UI's chat mode selector
-  - Character: the character to use, as found in the Text Generation UI's character gallery
-  - URL: the URL to the Text Generation UI's OpenAI API, typically http://127.0.0.1:5000, no slash at the end
-- These settings will be saved to `discord_settings.json` if you need to change it later
+  - URL: the URL to the LLM's OpenAI-like API, typically http://127.0.0.1:8080 (no slash at the end)
+  - Prompt: the system prompt to configure how your bot will act
+  - ~~Tools: tool configs that the bot is allowed to use~~
+- These settings will be saved to `settings.json` if you need to change it later
 
-The Text Generation UI needs to be started with the `--listen --api` flags in order for this to work.
+Llama Server needs to be started with a command similar to the following:
+```
+llama-server.exe -ngl 9999 --host 0.0.0.0 -dev CUDA0 --jinja -c 42000 -m Qwen3-30B-A3B-Thinking-2507-Q4_K_S.gguf
+```

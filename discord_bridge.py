@@ -1,99 +1,12 @@
-# Version 3 of the OpenAI-Discord bridge.
-# Written by @koppanyh
-#
-# Setup:
-# installer_files\conda\condabin\conda.bat activate installer_files\env
-# python -m pip install -U discord.py
+# Version 4 of the OpenAI-Discord bridge.
 #
 # This example requires the 'message_content' intent set on the bot.
 
 import asyncio
 import discord
-import json
-import os
-import requests
 
-
-
-class Settings:
-	def __init__(self, fileName="discord_settings.json"):
-		# Saved settings
-		self.token = ""
-		self.mode = ""
-		self.character = ""
-		self.url = "http://127.0.0.1:5000"
-		self.channels = set()
-		# Runtime settings
-		self.fileName = fileName
-		self.name = ""
-		self.clientId = 0
-	def load(self):
-		with open(self.fileName, "r") as f:
-			data = {
-				"token": self.token,
-				"mode": self.mode,
-				"character": self.character,
-				"url": self.url,
-				"channels": list(self.channels)
-			}
-			data.update(json.loads(f.read()))
-			self.token = data["token"]
-			self.mode = data["mode"]
-			self.character = data["character"]
-			self.url = data["url"]
-			self.channels = set(data["channels"])
-	def save(self):
-		data = {
-			"token": self.token,
-			"mode": self.mode,
-			"character": self.character,
-			"url": self.url,
-			"channels": list(self.channels)
-		}
-		with open(self.fileName, "w") as f:
-			f.write(json.dumps(data, indent=2))
-	def loadSafe(self):
-		# Load settings or fill them in if they don't exist
-		if os.path.exists(self.fileName):
-			self.load()
-		else:
-			self.token = input("Bot's Discord token: ")
-			self.mode = input("LLM mode (chat/chat-instruct/instruct): ")
-			self.character = input("LLM character name: ")
-			self.url = input("OpenAI API endpoint (http://127.0.0.1:5000): ")
-			self.save()
-
-
-
-class API:
-	headers = {
-		"Content-Type": "application/json"
-	}
-	def __init__(self, server="http://127.0.0.1:5000"):
-		self.url = server + "/v1/chat/completions"
-	def chat(self, data):
-		response = requests.post(self.url, headers=API.headers, json=data, verify=False)
-		return response.json()['choices'][0]
-		# {'index': 0, 'finish_reason': 'stop', 'message': {'role': 'assistant', 'content': "Hey! What's up?"}}
-
-class Chat:
-	def __init__(self, api, mode, character):
-		self.api = api
-		self.mode = mode
-		self.character = character
-		self.history = []
-	def reply(self, msg):
-		self.addHistory("user", msg)
-		data = {
-			"mode": self.mode,
-			"character": self.character,
-			"messages": self.history
-		}
-		response = api.chat(data)["message"]
-		self.history.append(response)
-		return response["content"]
-	def addHistory(self, role, content):
-		self.history.append({"role": role, "content": content})
+from settings import Settings, DefaultFile
+from api import API, Chat, ChatRole
 
 
 
@@ -106,12 +19,9 @@ def getChat(chanId, chats, api, settings):
 	if chanId not in settings.channels:
 		# No chat if we're not registered
 		return None
-	if chanId in chats:
-		return chats[chanId]
-	else:
-		chat = Chat(api, settings.mode, settings.character)
-		chats[chanId] = chat
-		return chat
+	if chanId not in chats:
+		chats[chanId] = Chat(api)
+	return chats[chanId]
 
 async def processCommands(message, chats, api, settings):
 	msg = message.content.strip()
@@ -126,32 +36,48 @@ async def processCommands(message, chats, api, settings):
 	chanId = message.channel.id
 	
 	if cmd == "$help":
-		await message.channel.send("$ping, $register, $remove, $reset, $speak, $whisper")
+		help_text = "Format: $<cmd> @<bot> <params>\n\n" \
+					"$help - List available commands\n" \
+					"$ping - Test if the bot is responding\n" \
+					"$register - Make the bot listen in this channel\n" \
+					"$remove - Stop the bot from replying in this channel\n" \
+					"$reset - Clear conversation history in this channel\n" \
+					"$speak - Have the bot say something\n" \
+					"$whisper - Have the bot say something without remembering it"
+		await message.channel.send(help_text)
 	elif cmd == "$ping":
 		await message.channel.send("Pong!")
 	elif cmd == "$register":
-		settings.channels.add(chanId)
-		settings.save()
-		await message.channel.send("Hello!")
+		if chanId not in settings.channels:
+			settings.channels.add(chanId)
+			settings.save()
+			await message.channel.send("Hello!")
+		else:
+			await message.channel.send("I'm already in this channel.")
 	elif cmd == "$remove":
 		if chanId in settings.channels:
 			settings.channels.remove(chanId)
 			settings.save()
-		await message.channel.send("Bye")
+			await message.channel.send("Bye.")
+		else:
+			await message.channel.send("I wasn't in this channel.")
 	elif cmd == "$reset":
 		chat = getChat(chanId, chats, api, settings)
-		if chat is not None:
-			chat.history = []
-			await message.channel.send("Wut?")
+		if chat is None:
+			return True
+		chat.history = []
+		await message.channel.send("*Awakens from a coma unable to remember anything.*")
 	elif cmd == "$speak":
 		chat = getChat(chanId, chats, api, settings)
-		if chat is not None:
-			chat.addHistory("assistant", msg)
-			await message.channel.send(msg)
+		if chat is None:
+			return True
+		chat.addHistory(ChatRole.ASSISTANT, msg)
+		await message.channel.send(msg)
 	elif cmd == "$whisper":
 		chat = getChat(chanId, chats, api, settings)
-		if chat is not None:
-			await message.channel.send(msg)
+		if chat is None:
+			return True
+		await message.channel.send(msg)
 	else:
 		# No valid commands detected
 		return False
@@ -161,14 +87,13 @@ async def processCommands(message, chats, api, settings):
 
 
 if __name__ == "__main__":
-	settingsFile = input("Settings file (leave empty for default): ")
-	if settingsFile == "":
-		settings = Settings("discord_settings.json")
+	settings_file = input(f"Settings file [{DefaultFile}]: ")
+	if not settings_file:
+		settings = Settings()
 	else:
-		settings = Settings(settingsFile)
-	settings.loadSafe()
+		settings = Settings(settings_file)
 	
-	api = API(settings.url)
+	api = API(settings)
 	
 	chats = {} # channelId: Chat
 	
@@ -184,9 +109,7 @@ if __name__ == "__main__":
 		# Update runtime settings
 		settings.clientId = client.user.id
 		settings.name = client.user.name
-		
 		print(f'Logged in as {client.user}')
-		print('Please be aware that character greetings are not included in the generated prompts')
 	
 	@client.event
 	async def on_message(message):
@@ -195,12 +118,12 @@ if __name__ == "__main__":
 			return
 		
 		# Process any commands
+		# This needs to go first to handle registration commands.
 		isCommand = await processCommands(message, chats, api, settings)
 		if isCommand:
 			return
 		
 		chat = getChat(message.channel.id, chats, api, settings)
-		
 		# Ignore messages from channels that we're not in
 		if chat is None:
 			return

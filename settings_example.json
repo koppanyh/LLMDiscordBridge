@@ -1,0 +1,6 @@
+{
+  "token": "<insert Discord API token here>",
+  "url": "http://localhost:8080",
+  "prompt": "<insert system prompt for bot here>",
+  "channels": []
+}
