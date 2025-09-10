@@ -1,23 +1,26 @@
-# Version 3 of the OpenAI API interface.
+# Version 4 of the OpenAI API interface.
 
 import base64
 import requests
 
 from enum import Enum
 from settings import Settings
+from typing import Any
 
 
 class API:
-	headers = {
-		"Content-Type": "application/json"
-	}
-	def __init__(self, settings):
+	def __init__(self, settings: Settings):
 		self.settings = settings
 		self.url = f"{settings.url}/v1/chat/completions"
-	def chat(self, data):
+		self.headers = {
+			"Content-Type": "application/json"
+		}
+		if settings.llmToken:
+			self.headers["Authorization"] = f"Bearer {settings.llmToken}"
+	def chat(self, data: dict[str, Any]) -> dict[str, Any]:
 		response = requests.post(
 			self.url,
-			headers=API.headers,
+			headers=self.headers,
 			json=data,
 			verify=False
 		)
@@ -37,18 +40,11 @@ class ChatRole(Enum):
     TOOL      = "tool"
 
 class Chat:
-	def __init__(self, api, auto_prompt=True):
+	def __init__(self, api: API, auto_prompt=True):
 		self.api = api
-		self.history = []
-		if auto_prompt and api.settings.getPrompt():
-			self.reset()
-	def rawReply(self, messages, use_tools=False):
-		#print("\t", messages)
-		# TODO: Maybe add these parameters into the settings?
-		data = {
-			"messages": messages,
-			"stream": False,
-			"cache_prompt": True,
+		self.history: list[dict[str, Any]] = []
+		# Define defaults for generation parameters.
+		default_params = {
 			"samplers": "edkypmxt",
 			"temperature": 0.8,
 			"dynatemp_range": 0,
@@ -67,9 +63,24 @@ class Chat:
 			"dry_base": 1.75,
 			"dry_allowed_length": 2,
 			"dry_penalty_last_n": -1,
-			"max_tokens": -1,
-			"timings_per_token": False
+			"max_tokens": -1
 		}
+		# Override defaults with settings and constants.
+		self.data_template = {
+			**default_params,
+			**self.api.settings.apiParams,
+			**{
+				"stream": False,
+				"cache_prompt": True,
+				"timings_per_token": False
+			}
+		}
+		# Reset to set the prompt.
+		if auto_prompt and api.settings.getPrompt():
+			self.reset()
+	def rawReply(self, messages, use_tools=False):
+		#print("\t", messages)
+		data = {**self.data_template, "messages": messages}
 		# TODO: Tool calling will be implemented later
 		# if use_tools:
 		# 	data["tools"] = [
@@ -97,7 +108,7 @@ class Chat:
 		return resp
 	def reply(self, msg, use_tools=False):
 		self.addHistory(ChatRole.USER, msg)
-		response = self.rawReply(self.history, use_tools)["message"]
+		response: dict[str, Any] = self.rawReply(self.history, use_tools)["message"]
 		self.history.append(response)
 		# TODO: Implement tool calling functionality later
 		# if response.get("tool_calls"):
@@ -148,7 +159,6 @@ class Chat:
 
 if __name__ == "__main__":
 	# Demo of the API
-
 	settings = Settings()
 	api = API(settings)
 	chat = Chat(api)
