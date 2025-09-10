@@ -1,6 +1,7 @@
 {
   "token": "<insert Discord API token here>",
   "url": "http://localhost:8080",
-  "prompt": "<insert system prompt for bot here>",
+  "prompt": "<insert system prompt for bot here (overwritten by promptFile)>",
+  "promptFile": "prompt_example.txt",
   "channels": []
 }

@@ -1,4 +1,4 @@
-# Version 2 of the OpenAI API interface.
+# Version 3 of the OpenAI API interface.
 
 import base64
 import requests
@@ -40,8 +40,8 @@ class Chat:
 	def __init__(self, api, auto_prompt=True):
 		self.api = api
 		self.history = []
-		if auto_prompt and api.settings.prompt:
-			self.addHistory(ChatRole.SYSTEM, api.settings.prompt)
+		if auto_prompt and api.settings.getPrompt():
+			self.reset()
 	def rawReply(self, messages, use_tools=False):
 		#print("\t", messages)
 		# TODO: Maybe add these parameters into the settings?
@@ -141,6 +141,9 @@ class Chat:
 		args["role"] = role.value
 		args["content"] = content
 		self.history.append(args)
+	def reset(self):
+		self.history = []
+		self.addHistory(ChatRole.SYSTEM, self.api.settings.getPrompt())
 
 
 if __name__ == "__main__":

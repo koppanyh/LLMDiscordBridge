@@ -36,6 +36,7 @@ First time:
   - Token: the token of the bot, used to authenticate with Discord
   - URL: the URL to the LLM's OpenAI-like API, typically http://127.0.0.1:8080 (no slash at the end)
   - Prompt: the system prompt to configure how your bot will act
+  - Prompt File: the file to overwrite the prompt with (optional, manually set)
   - ~~Tools: tool configs that the bot is allowed to use~~
 - These settings will be saved to `settings.json` if you need to change it later
 

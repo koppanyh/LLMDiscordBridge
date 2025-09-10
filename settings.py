@@ -1,4 +1,4 @@
-# Version 2 of the settings interface.
+# Version 3 of the settings interface.
 
 import json
 
@@ -11,11 +11,11 @@ class Settings:
 		self.token = ""
 		self.url = DefaultURL
 		self.prompt = ""
+		self.promptFile = ""  # This overwrites prompt.
 		self.channels = set()
 		# Runtime settings
 		self.file_name = file_name
-		self.clientId = 0  # The ID that Discord assigns to this bot user.
-		self.name = ""  # The name that the bot is registered under.
+		self.prompt_from_file = ""
 		if auto_load:
 			self.loadSafe()
 	def load(self):
@@ -24,18 +24,24 @@ class Settings:
 				"token": self.token,
 				"url": self.url,
 				"prompt": self.prompt,
+				"promptFile": self.promptFile,
 				"channels": list(self.channels)
 			}
 			data.update(json.loads(f.read()))
 			self.token = data["token"]
 			self.url = data["url"]
 			self.prompt = data["prompt"]
+			self.promptFile = data["promptFile"]
 			self.channels = set(data["channels"])
+			if self.promptFile:
+				with open(self.promptFile, "r") as f:
+					self.prompt_from_file = f.read()
 	def save(self):
 		data = {
 			"token": self.token,
 			"url": self.url,
 			"prompt": self.prompt,
+			"promptFile": self.promptFile,
 			"channels": list(self.channels)
 		}
 		with open(self.file_name, "w") as f:
@@ -51,3 +57,7 @@ class Settings:
 				self.url = DefaultURL
 			self.prompt = input("Prompt to use for the LLM: ")
 			self.save()
+	def getPrompt(self):
+		if self.prompt_from_file:
+			return self.prompt_from_file
+		return self.prompt
