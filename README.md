@@ -65,4 +65,5 @@ The `settings.json` can be manually updated for advanced config.
    - e.g. `"top_p": 0.9`
    - e.g. `"model": "deepseek/deepseek-chat-v3-0324"` (used for OpenRouter.ai)
  - llmToken: LLM's API authentication token (optional)
+ - multiIO: Bool to enable the multi I/O system (default: `false`, optional)
  - ~~tools: tool configs that the bot is allowed to use~~ (not implmented)
