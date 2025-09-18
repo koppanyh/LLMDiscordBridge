@@ -66,4 +66,9 @@ The `settings.json` can be manually updated for advanced config.
    - e.g. `"model": "deepseek/deepseek-chat-v3-0324"` (used for OpenRouter.ai)
  - llmToken: LLM's API authentication token (optional)
  - multiIO: Bool to enable the multi I/O system (default: `false`, optional)
+ - multimodal: Bool to enable multimodal image input support (default: `false`, optional)
  - ~~tools: tool configs that the bot is allowed to use~~ (not implmented)
+
+## TODO
+
+ - Add chat history memory

@@ -1,4 +1,4 @@
-# Version 7 of the OpenAI-Discord bridge.
+# Version 8 of the OpenAI-Discord bridge.
 #
 # This example requires the 'message_content' intent set on the bot.
 
@@ -8,9 +8,25 @@ import argparse
 import asyncio
 import datetime
 import discord
+import os
+import random
 
 from settings import Settings, DefaultFile
-from api import API, Chat, ChatRole
+from api import API, Attachment, Chat, ChatRole
+
+
+
+os.system("")  # Enables ansi escape sequences in Windows.
+class Color:
+    RESET   = "\x1b[m"
+    BLACK   = "\x1b[30m"
+    RED     = "\x1b[31m"
+    GREEN   = "\x1b[32m"
+    YELLOW  = "\x1b[33m"
+    BLUE    = "\x1b[34m"
+    MAGENTA = "\x1b[35m"
+    CYAN    = "\x1b[36m"
+    WHITE   = "\x1b[37m"
 
 
 
@@ -18,22 +34,24 @@ class Message:
 	def __init__(self, message: discord.Message):
 		self.channelId = message.channel.id
 		self.messageId = message.id
-		self.author_name = message.author.display_name
+		self.author_displayname = message.author.display_name
+		self.author_username = message.author.name
 		self.clean_content = message.clean_content
+		self.attachments: list[Attachment] = []
 		self.wall_time = datetime.datetime.now()
+	async def fillAttachments(self, message: discord.Message):
+		for attachment in message.attachments:
+			self.attachments.append(Attachment(attachment.content_type, await attachment.read()))
 	def strTime(self, cur_ts: datetime.datetime):
 		wall_date = self.wall_time.date()
-		today = cur_ts.date()
-		if wall_date == today:
-			date = "Today"
-		else:
-			yesterday = cur_ts.date() - datetime.timedelta(days=1)
-			if wall_date == yesterday:
-				date = "Yesterday"
-			else:
-				date = wall_date.isoformat()
-		# TODO: remove this line to get relative dates back
 		date = wall_date.isoformat()
+		#today = cur_ts.date()
+		#if wall_date == today:
+		#	date = "Today"
+		#else:
+		#	yesterday = cur_ts.date() - datetime.timedelta(days=1)
+		#	if wall_date == yesterday:
+		#		date = "Yesterday"
 		return f"{date} {self.wall_time.time().isoformat(timespec='seconds')}"
 	def strDelta(self, cur_ts: datetime.datetime):
 		seconds = (cur_ts - self.wall_time).total_seconds()
@@ -63,15 +81,14 @@ class Message:
 		if value == 1:
 			unit = unit[:-1]  # Remove 's' for singular form
 		
-		return f"{value} {unit} ago"
+		return f"{value} {unit}"
 	def stringify(self, cur_ts: datetime.datetime):
-		# TODO: Revert this to have delta
-		#return  f"**{self.author_name}, {self.strTime(cur_ts)} ({self.strDelta(cur_ts)})**" \
-		return  f"**{self.author_name}, {self.strTime(cur_ts)}**" \
-				f"\n\n{self.clean_content}"
+		# TODO: Revert this to have delta: ({self.strDelta(cur_ts)} ago)
+		return  f"**{self.author_displayname} [{self.author_username}], " \
+				f"{self.strTime(cur_ts)}**\n\n{self.clean_content}"
 		# Example message format:
 		# ```
-		# **<username>, <date> <time> (<delta> seconds/minutes/hours ago)**
+		# **<display name> [<username>], <date> <time> (<delta> seconds/minutes/hours ago)**
 		#
 		# <Message contents>
 		# ```
@@ -94,28 +111,23 @@ class Conversation:
 			return "\n\n-----\n\n".join(msgs)
 			# Example of multi-in format:
 			# ```
-			# **<Username A>, <time> (<delta> seconds/minutes/hours ago)**
-			#
-			# <Message contents>
+			# <Message payload 1>
 			# 
 			# -----
 			# 
-			# **<Username B>, <time> (<delta> seconds/minutes/hours ago)**
-			#
-			# <Message contents>
+			# <Message payload 2>
 			# 
 			# -----
 			# 
-			# **<Username C>, <time> (<delta> seconds/minutes/hours ago)**
-			#
-			# <Message contents>
+			# <Message payload 3>
 			# ```
 		else:
 			return self.msg_buf.pop(0).clean_content
 	def stringifyAndClear(self, cur_ts: datetime.datetime):
 		msgs = self.stringify(cur_ts)
+		atts = [attachment for msg in self.msg_buf for attachment in msg.attachments]
 		self.msg_buf.clear()
-		return msgs
+		return msgs, atts
 
 
 
@@ -235,42 +247,73 @@ class Bot:
 			await self.stop()
 	async def processMessage(self, conversation: Conversation, message: discord.Message):
 		msg = message.clean_content
-		print(f"MSG: {msg}")
-		response = await self.getLlmResponse(conversation, msg)
+		print(f"{Color.GREEN}MSG: {msg}\n({len(message.attachments)} attachments){Color.RESET}")
+		atts = [Attachment(a.content_type, await a.read()) for a in message.attachments]
+		response = await self.getLlmResponse(conversation, msg, atts)
 		await self.respond(conversation, response)
 	async def processMessageMulti(self, conversation: Conversation, message: discord.Message):
 		msg = conversation.newMessage(message)
-		print(f"MSG ({msg.author_name}): {msg.clean_content}")
+		await msg.fillAttachments(message)
+		print(f"{Color.GREEN}MSG ({msg.author_displayname}): {msg.clean_content}{Color.RESET}")
 		self.kickoffDelayedMessageProcessor(conversation)
-	async def getLlmResponse(self, conversation: Conversation, msg: str) -> str:
+	async def getLlmResponse(self, conversation: Conversation, msg: str, attachments: list[Attachment] | None = None) -> str:
+		images: list[Attachment] = []
+		if attachments and self.api.settings.multimodal:
+			for attachment in attachments:
+				if attachment.content_type.startswith("image"):
+					images.append(attachment)
 		async with conversation.channel.typing():
 			loop = asyncio.get_event_loop()
-			response = await loop.run_in_executor(
-				None,
-				lambda c,m: c.reply(m),
-				conversation.chat,
-				msg
-			)
+			if images:
+				response = await loop.run_in_executor(
+					None,
+					lambda c, m, i: c.replyWithImages(m, i),
+					conversation.chat,
+					msg,
+					images
+				)
+			else:
+				response = await loop.run_in_executor(
+					None,
+					lambda c, m: c.reply(m),
+					conversation.chat,
+					msg
+				)
 		return response
 	def kickoffDelayedMessageProcessor(self, conversation: Conversation):
-		if self.task is None and conversation.hasMessages():
-			# TODO set the delay based on when the last one happened
-			self.task = asyncio.create_task(self.delayedMessageProcessor(conversation, 10))
+		if self.task is not None or not conversation.hasMessages():
+			return
+		# Make it faster for 1-on-1 chats
+		if conversation.channel.type == discord.ChannelType.private:
+			delay = random.randint(2, 5)
+		else:
+			delay = random.randint(3, 15)
+		# TODO set the delay based on when the last one happened
+		self.task = asyncio.create_task(self.delayedMessageProcessor(conversation, delay))
 	async def delayedMessageProcessor(self, conversation: Conversation, delay: float):
 		await asyncio.sleep(delay)
 		now_ts = datetime.datetime.now()
-		messages = conversation.stringifyAndClear(now_ts)
-		print(f"MESSAGES:\n{messages}")
-		response = await self.getLlmResponse(conversation, messages)
+		messages, attachments = conversation.stringifyAndClear(now_ts)
+		print(f"{Color.YELLOW}MESSAGES:\n{messages}\n({len(attachments)} attachments){Color.RESET}")
+		response = await self.getLlmResponse(conversation, messages, attachments)
 		await self.respond(conversation, response)
 		self.task = None
 		self.kickoffDelayedMessageProcessor(conversation)
 	async def respond(self, conversation: Conversation, response: str):
-		print(f"RESP: {response}")
+		print(f"{Color.CYAN}RESP: {response}{Color.RESET}")
 		print()
+		messages = response.split("\n\n-----\n\n")
+		async with conversation.channel.typing():
+			await self.send(conversation, messages.pop(0))
+			while len(messages):
+				await asyncio.sleep(1)
+				await self.send(conversation, messages.pop(0))
+	async def send(self, conversation: Conversation, message: str):
 		# TODO split this up into multiple messages if it's over 2k bytes
-		# TODO split this up into multiple messages if it's a multi output
-		await conversation.channel.send(response)
+		message = message.strip()
+		if message == "/SKIP":
+			return
+		await conversation.channel.send(message)
 
 
 

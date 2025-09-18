@@ -1,4 +1,4 @@
-# Version 5 of the settings interface.
+# Version 6 of the settings interface.
 
 import json
 
@@ -16,6 +16,7 @@ class Settings:
 		self.apiParams = {}
 		self.llmToken = ""
 		self.multiIO = False
+		self.multimodal = False
 		# Runtime settings
 		self.file_name = file_name
 		self.prompt_from_file = ""
@@ -31,7 +32,8 @@ class Settings:
 				"channels": list(self.channels),
 				"apiParams": self.apiParams,
 				"llmToken": self.llmToken,
-				"multiIO": self.multiIO
+				"multiIO": self.multiIO,
+				"multimodal": self.multimodal
 			}
 			data.update(json.loads(f.read()))
 			self.token = data["token"]
@@ -42,6 +44,7 @@ class Settings:
 			self.apiParams = data["apiParams"]
 			self.llmToken = data["llmToken"]
 			self.multiIO = data["multiIO"]
+			self.multimodal = data["multimodal"]
 			if self.promptFile:
 				try:
 					with open(self.promptFile, "r") as f:
@@ -57,7 +60,8 @@ class Settings:
 			"channels": list(self.channels),
 			"apiParams": self.apiParams,
 			"llmToken": self.llmToken,
-			"multiIO": self.multiIO
+			"multiIO": self.multiIO,
+			"multimodal": self.multimodal
 		}
 		with open(self.file_name, "w") as f:
 			f.write(json.dumps(data, indent=2))

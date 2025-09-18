@@ -1,4 +1,6 @@
-# Version 4 of the OpenAI API interface.
+# Version 5 of the OpenAI API interface.
+
+from __future__ import annotations
 
 import base64
 import requests
@@ -26,12 +28,25 @@ class API:
 		)
 		#print(response.content)
 		try:
-			return response.json()["choices"][0]
+			js_resp = response.json()
+			print("DEBUG:", js_resp["usage"])
+			return js_resp["choices"][0]
 			# {'index': 0, 'finish_reason': 'stop', 'message': {'role': 'assistant', 'content': "Hey! What's up?"}}
 		except Exception as e:
 			print(response.content)
 			raise e
 
+
+
+class Attachment:
+	def __init__(self, content_type: str | None, contents: bytes):
+		self.content_type = content_type or ""
+		self.contents = contents
+	def __str__(self):
+		return self.contents.decode("utf-8")
+	def toUrlString(self):
+		base64_data = base64.b64encode(self.contents).decode("utf-8")
+		return f"data:{self.content_type};base64,{base64_data}"
 
 class ChatRole(Enum):
     SYSTEM    = "system"
@@ -124,30 +139,17 @@ class Chat:
 		#     response = self.rawReply(self.history, False)["message"]
 		#     self.history.append(response)
 		return response["content"]
-	def replyWithImage(self, msg, img_path, use_tools=False):
-		img_ext = img_path.split('.')[-1].lower()
-		mimes = {
-			"jpg": "jpeg",
-			"jpeg": "jpeg",
-			"png": "png"
-		}
-		if (img_ext not in mimes):
-			raise ValueError("Invalid image extension")
-		img_ext = mimes[img_ext]
-		with open(img_path, "rb") as image_file:
-			base64_image = base64.b64encode(image_file.read()).decode("utf-8")
-		return self.reply([
-			{
-				"type": "text",
-				"text": msg
-			},
-			{
+	def replyWithImages(self, msg, images: list[Attachment], use_tools=False):
+		message_parts = [{
+			"type": "text",
+			"text": msg
+		}]
+		for image in images:
+			message_parts.append({
 				"type": "image_url",
-				"image_url": {
-					"url": f"data:image/{img_ext};base64,{base64_image}"
-				}
-			}
-		], use_tools)
+				"image_url": { "url": image.toUrlString() }
+			})
+		return self.reply(message_parts, use_tools)
 	def addHistory(self, role: ChatRole, content, **args):
 		args["role"] = role.value
 		args["content"] = content
